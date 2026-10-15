@@ -1,0 +1,139 @@
+# =============================================================================
+# 02-ci.yml  ― 【STEP 2 / 中級】実用的な CI (テスト自動実行) を組み立てる
+# =============================================================================
+# 01 で学んだ基礎の上に、実務の CI で必ず使う機能を重ねる。
+#   - matrix        : 複数の Node.js バージョンで同じテストを並列実行
+#   - キャッシュ    : npm のダウンロードを使い回して高速化
+#   - concurrency   : 同じ PR で古い実行を自動キャンセル (資源の節約)
+#   - artifact      : 実行結果のファイルを保存して後からダウンロード
+#   - paths-ignore  : ドキュメントだけの変更では実行しない
+#   - ゲート job    : 「全部成功したか」を 1 つの job にまとめる (ブランチ保護向け)
+#   - workflow_call : 他の workflow から「部品」として呼び出せる (再利用ワークフロー)
+# =============================================================================
+
+name: 02 CI
+
+on:
+  pull_request:
+    branches: [main]
+    # 変更が Markdown だけなら CI を回さない。無駄な実行を減らせる。
+    # 注意: これを必須チェックにしている場合、スキップされると PR がマージ待ちのまま止まることがある。
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  push:
+    branches: [main]
+
+  # workflow_call: 他の workflow から `uses: ./.github/workflows/02-ci.yml` で呼び出せるようにする。
+  # 呼び出し側から値を受け取る入力を定義できる。
+  workflow_call:
+    inputs:
+      node-versions:
+        description: 'テストする Node.js バージョンの JSON 配列 (例: ["20","22"])'
+        type: string
+        required: false
+        default: '["20","22"]'
+
+  workflow_dispatch: # 手動実行も可能にしておく。入力は workflow_call と同じ名前にして、matrix の式を共通化する
+    inputs:
+      node-versions:
+        description: 'テストする Node.js バージョンの JSON 配列 (例: ["20","22"])'
+        type: string
+        required: false
+        default: '["20","22"]'
+
+permissions:
+  contents: read
+
+# -----------------------------------------------------------------------------
+# concurrency: 同じ「グループ」の実行が同時に走らないようにする
+# -----------------------------------------------------------------------------
+# グループ = workflow 名 + ブランチ。同じ PR に連続 push したとき、
+# 古い実行をキャンセルして最新だけを走らせる。
+# ただし main への push は、1 つ 1 つの結果を残したいのでキャンセルしない。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # husky (Git フック) は CI では不要。 `npm ci` 時の prepare スクリプトで有効化されないよう無効にする。
+  HUSKY: "0"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # job 1: matrix でテストを並列実行
+  # ---------------------------------------------------------------------------
+  test:
+    name: test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      # fail-fast: true (既定) だと、1 つ失敗した時点で他の組み合わせがキャンセルされる。
+      # false にすると全部の結果が見えるので、「どのバージョンで失敗するか」の切り分けに向く。
+      fail-fast: false
+      matrix:
+        # fromJSON で JSON 文字列を配列に変換する。
+        #  - workflow_call 経由 : 呼び出し側が渡した inputs.node-versions
+        #  - それ以外のトリガー  : inputs が空なので、|| の右側のデフォルト値が使われる
+        node-version: ${{ fromJSON(inputs.node-versions || '["20","22"]') }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # setup-node は Node.js のインストールと、npm キャッシュの設定を一度にやってくれる。
+      # cache: npm とすると、package-lock.json のハッシュをキーに ~/.npm を保存/復元する。
+      - name: Node.js ${{ matrix.node-version }} をセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      # `npm ci` は package-lock.json の内容を忠実にインストールする (CI 向け)。
+      # `npm install` と違い lock ファイルを書き換えないので、再現性が高い。
+      - name: 依存関係をインストール
+        run: npm ci
+
+      # shell: bash を明示すると `-eo pipefail` が有効になる。
+      # pipefail が無いと `npm test | tee ...` は tee の終了コード (0) で判定され、
+      # テストが失敗しても job が成功してしまう。パイプを使うときは必ず指定する。
+      - name: テストを実行してログを保存
+        shell: bash
+        run: npm test 2>&1 | tee "test-output-node${{ matrix.node-version }}.log"
+
+      # ログを artifact (成果物) として保存する。 Actions の実行ページからダウンロードできる。
+      # if: always() で、テスト失敗時にもログを残す (失敗時こそログが必要)。
+      - name: テストログを保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log-node${{ matrix.node-version }} # artifact 名は同一実行内で一意にする
+          path: test-output-node${{ matrix.node-version }}.log
+          retention-days: 7 # 保存期間。ストレージ節約のため短めに
+
+  # ---------------------------------------------------------------------------
+  # job 2: ゲート job (全体の成否を 1 つにまとめる)
+  # ---------------------------------------------------------------------------
+  # なぜ必要か:
+  #   ブランチ保護の「必須ステータスチェック」には job 名を登録する。
+  #   matrix の job 名は "test (Node 20)" のように可変で、バージョンを変えるたびに設定を直す必要がある。
+  #   この job だけを必須にすれば、matrix の中身を自由に変えられる。
+  ci-result:
+    name: CI 結果まとめ
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: test
+    # always() が無いと、test が失敗したときにこの job 自体がスキップされ、
+    # 「スキップ = 成功扱い」になってしまい、必須チェックをすり抜けるので注意。
+    if: always()
+    steps:
+      - name: test の結果を判定
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          echo "test job の結果: ${TEST_RESULT}"
+          if [ "${TEST_RESULT}" != "success" ]; then
+            echo "::error::テストが成功していません (${TEST_RESULT})"
+            exit 1 # 終了コードが 0 以外だと step / job が失敗になる
+          fi
+          echo "すべてのテストに成功しました 🎉"

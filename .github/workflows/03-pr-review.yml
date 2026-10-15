@@ -1,0 +1,108 @@
+# =============================================================================
+# 03-pr-review.yml  ― 【STEP 3 / 上級】PR を自動レビューし、コメントと Issue を作る
+# =============================================================================
+# やること
+#   PR が作られる/更新されるたびに:
+#     1. 変更ファイルを検査する (秘密情報の混入 / eval / console.log / テスト漏れ / PR 肥大)
+#     2. 指摘を ①Files changed のアノテーション ②Actions のサマリー ③PR コメント で表示
+#     3. 「重大」な指摘は Issue として自動起票 (同じ指摘は重複して作らない)
+#
+# 検査ロジック本体: .github/scripts/pr-review.js (ローカルでテスト可能)
+# テスト          : node .github/scripts/pr-review.test.js
+#
+# ここで学べる上級トピック
+#   - actions/github-script で GitHub API を JS から直接呼ぶ
+#   - job 単位の最小権限 (permissions)
+#   - fork からの PR の安全な扱い (pull_request と pull_request_target の違い)
+#   - 冪等な処理 (何度実行しても結果が同じ) の設計: コメント更新 / Issue 重複防止
+#   - Draft PR のスキップ
+#
+# 次の段階 (Claude Code GitHub Action) との関係
+#   「検査する部分」を AI に置き換えても、このワークフローの
+#   権限設計・コメント更新・Issue 重複防止の考え方はそのまま使える。
+# =============================================================================
+
+name: 03 PR Review
+
+# -----------------------------------------------------------------------------
+# 【重要】pull_request と pull_request_target の違い (セキュリティ)
+# -----------------------------------------------------------------------------
+#   pull_request        : PR の「マージ結果」のコードで動く。
+#                         fork の PR では Secrets が渡されず、トークンも読み取り専用。
+#                         -> 外部の人のコードを動かしても安全。 ★この workflow はこちら
+#
+#   pull_request_target : 「ベースブランチ (main)」の workflow で動き、書き込み権限と Secrets が使える。
+#                         -> 便利だが、PR のコードを checkout して実行すると、
+#                            悪意ある PR にトークンを盗まれる危険がある。上級者向け。
+#
+# 本 workflow は fork PR では書き込み (コメント / Issue) をスキップする設計。
+# (fork PR にもコメントしたい場合は、pull_request_target か、workflow_run を使った
+#  二段構成が必要になる。リスクを理解してから導入すること)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+
+# 同じ PR で連続 push されたら、古い実行をキャンセルして最新だけ動かす。
+# (キャンセルのタイミング次第でコメント更新が競合するのを防ぐ効果もある)
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# workflow 全体の権限は「何も与えない」から始め、job ごとに必要な分だけ許可する。
+# `permissions: {}` は全権限なし。これが最も安全な出発点。
+permissions: {}
+
+jobs:
+  review:
+    name: 自動レビュー
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Draft の PR はまだ作業中なのでレビューしない。「Ready for review」にした時 (ready_for_review) に動く。
+    if: github.event.pull_request.draft == false
+
+    # この job が必要とする権限だけを許可する。
+    permissions:
+      contents: read # checkout (コードの読み取り)
+      pull-requests: write # PR コメントの作成・更新
+      issues: write # Issue の作成、ラベルの作成
+
+    env:
+      # true にすると、重大な指摘が 1 件でもあれば job を失敗させる。
+      # 必須チェックにすれば「重大な指摘が残っている PR はマージ不可」にできる。
+      # 最初は false で運用し、誤検知の傾向を見てから true にするのがお勧め。
+      FAIL_ON_HIGH: "false"
+
+    steps:
+      # スクリプトファイル (.github/scripts/pr-review.js) を使うため checkout が必要。
+      # persist-credentials: false は、checkout 後の git 操作用に保存される認証情報を残さない設定。
+      # この job では git push をしないので、不要な認証情報を残さない = 攻撃面を減らす。
+      - name: コードを取得
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # actions/github-script: 「JavaScript を書くだけで GitHub API を呼べる」action。
+      # スクリプト内では次の変数が使える:
+      #   github  : 認証済みの Octokit (REST API クライアント)
+      #   context : イベント情報 (PR 番号やリポジトリ等)
+      #   core    : ログ出力 / アノテーション / 出力値の設定
+      # 認証には、デフォルトで GITHUB_TOKEN (上の permissions で絞った権限) が使われる。
+      - name: PR を検査してコメント・Issue を作成
+        id: review
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // checkout したスクリプトを読み込んで実行する。
+            // ここに処理を長々と書かず、ファイルに分けるのが保守しやすい (テストもできる)。
+            const run = require('${{ github.workspace }}/.github/scripts/pr-review.js');
+            await run({ github, context, core });
+
+      # 前の step の出力 (high_count) を使った後処理の例。
+      - name: 結果をログに出す
+        if: always()
+        env:
+          HIGH_COUNT: ${{ steps.review.outputs.high_count }}
+        run: |
+          echo "重大な指摘: ${HIGH_COUNT:-0} 件"
