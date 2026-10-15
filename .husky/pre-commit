@@ -1,0 +1,2 @@
+echo "🐶 pre-commit: コミット前にテストを実行します"
+npm test

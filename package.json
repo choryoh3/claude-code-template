@@ -1,0 +1,24 @@
+{
+  "name": "claude-code-template",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js",
+    "prepare": "husky"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/choryoh3/claude-code-template.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/choryoh3/claude-code-template/issues"
+  },
+  "homepage": "https://github.com/choryoh3/claude-code-template#readme",
+  "description": "",
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}
