@@ -1,0 +1,10 @@
+# pnpm ワークスペースの対象。apps/* と packages/* の中の package.json が「ワークスペースパッケージ」になる。
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# インストール時のビルドスクリプトを実行しない依存 (pnpm 10 では明示が必要)。
+# sharp は next/image の最適化用、unrs-resolver は eslint-plugin-import の高速化用で、無くても動作する。
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver

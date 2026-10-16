@@ -1,9 +1,19 @@
 {
   "name": "claude-code-template",
   "version": "1.0.0",
-  "main": "index.js",
+  "private": true,
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "test": "node test.js && node .github/scripts/pr-review.test.js",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test && node .github/scripts/pr-review.test.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "prepare": "husky"
   },
   "repository": {
@@ -19,6 +29,13 @@
   "homepage": "https://github.com/choryoh3/claude-code-template#readme",
   "description": "",
   "devDependencies": {
-    "husky": "^9.1.7"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.10",
+    "turbo": "^2.11.8",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2"
   }
 }

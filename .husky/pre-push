@@ -1,0 +1,2 @@
+echo "🐶 pre-push: 型チェックとテストを実行します"
+pnpm typecheck && pnpm test

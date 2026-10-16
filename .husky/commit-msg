@@ -1,1 +1,1 @@
-node check-message.js "$1"
+node scripts/check-message.js "$1"
