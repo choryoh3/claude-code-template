@@ -1,2 +1,2 @@
-echo "🐶 pre-commit: コミット前にテストを実行します"
-npm test
+echo "🐶 pre-commit: ステージされたファイルを整形・Lint します"
+pnpm exec lint-staged

@@ -1,1 +1,11 @@
 node_modules
+.next
+.turbo
+dist
+*.tsbuildinfo
+.vercel
+
+# 環境変数ファイル (秘密情報を含むのでコミットしない)。雛形の .env.example だけ管理する
+.env
+.env.*
+!.env.example
