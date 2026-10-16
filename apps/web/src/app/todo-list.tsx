@@ -1,4 +1,5 @@
 import { fetchTodos } from '@/lib/api';
+import { TodoItem } from './todo-item';
 
 // サーバーコンポーネント: サーバー側で API を呼び、HTML として描画する。
 export async function TodoList() {
@@ -20,12 +21,7 @@ export async function TodoList() {
   return (
     <ul className="divide-y divide-zinc-200 rounded border border-zinc-200">
       {todos.map((todo) => (
-        <li key={todo.id} className="flex items-center justify-between p-3">
-          <span>{todo.title}</span>
-          <time className="text-sm text-zinc-500" dateTime={todo.createdAt}>
-            {new Date(todo.createdAt).toLocaleString('ja-JP')}
-          </time>
-        </li>
+        <TodoItem key={todo.id} todo={todo} />
       ))}
     </ul>
   );

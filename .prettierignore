@@ -3,5 +3,5 @@ pnpm-lock.yaml
 .next
 .turbo
 dist
-drizzle/meta
+**/drizzle/meta
 .github

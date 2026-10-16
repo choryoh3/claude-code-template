@@ -18,6 +18,11 @@ export const createTodoInputSchema = z.object({
     .max(100, '100文字以内で入力してください'),
 });
 
+export const updateTodoInputSchema = z.object({
+  done: z.boolean(),
+});
+
 // スキーマから型を生成する。型とバリデーションを二重管理しない。
 export type Todo = z.infer<typeof todoSchema>;
 export type CreateTodoInput = z.infer<typeof createTodoInputSchema>;
+export type UpdateTodoInput = z.infer<typeof updateTodoInputSchema>;

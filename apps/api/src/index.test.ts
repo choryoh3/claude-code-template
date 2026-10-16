@@ -38,6 +38,27 @@ describe('API', () => {
     expect(await (await app.request('/api/todos')).json()).toEqual([]);
   });
 
+  it('PATCH で完了状態を更新できる', async () => {
+    const app = createApp();
+    const { id } = (await (await postTodo(app, { title: 'a' })).json()) as { id: string };
+    const res = await app.request(`/api/todos/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ done: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id, done: true });
+  });
+
+  it('DELETE で削除でき、存在しない ID は 404、不正な ID は 400', async () => {
+    const app = createApp();
+    const { id } = (await (await postTodo(app, { title: 'a' })).json()) as { id: string };
+    expect((await app.request(`/api/todos/${id}`, { method: 'DELETE' })).status).toBe(204);
+    expect((await app.request(`/api/todos/${id}`, { method: 'DELETE' })).status).toBe(404);
+    expect((await app.request('/api/todos/not-a-uuid', { method: 'DELETE' })).status).toBe(400);
+    expect(await (await app.request('/api/todos')).json()).toEqual([]);
+  });
+
   it('CORS: 設定したオリジンを許可する', async () => {
     const app = createApp({ corsOrigin: 'https://web.example.com' });
     const res = await app.request('/api/todos', { headers: { Origin: 'https://web.example.com' } });

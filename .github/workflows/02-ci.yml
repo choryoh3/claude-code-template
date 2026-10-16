@@ -3,7 +3,7 @@
 # =============================================================================
 # 01 で学んだ基礎の上に、実務の CI で必ず使う機能を重ねる。
 #   - matrix        : 複数の Node.js バージョンで同じテストを並列実行
-#   - キャッシュ    : npm のダウンロードを使い回して高速化
+#   - キャッシュ    : pnpm のダウンロードを使い回して高速化
 #   - concurrency   : 同じ PR で古い実行を自動キャンセル (資源の節約)
 #   - artifact      : 実行結果のファイルを保存して後からダウンロード
 #   - paths-ignore  : ドキュメントだけの変更では実行しない
@@ -56,7 +56,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # husky (Git フック) は CI では不要。 `npm ci` 時の prepare スクリプトで有効化されないよう無効にする。
+  # husky (Git フック) は CI では不要。 `pnpm install` 時の prepare スクリプトで有効化されないよう無効にする。
   HUSKY: "0"
 
 jobs:
@@ -81,25 +81,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # setup-node は Node.js のインストールと、npm キャッシュの設定を一度にやってくれる。
-      # cache: npm とすると、package-lock.json のハッシュをキーに ~/.npm を保存/復元する。
+      # pnpm を使えるようにする。バージョンは省略すると、ルート package.json の
+      # "packageManager" (pnpm@10.x) が使われる。ローカルと CI で同じバージョンになる。
+      # ※ 必ず setup-node より「前」に置く (setup-node の cache: pnpm が pnpm コマンドを必要とするため)。
+      - name: pnpm をセットアップ
+        uses: pnpm/action-setup@v4
+
+      # setup-node は Node.js のインストールと、pnpm ストアのキャッシュ設定を一度にやってくれる。
+      # cache: pnpm とすると、pnpm-lock.yaml のハッシュをキーにダウンロード済みパッケージを保存/復元する。
       - name: Node.js ${{ matrix.node-version }} をセットアップ
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm
+          cache: pnpm
 
-      # `npm ci` は package-lock.json の内容を忠実にインストールする (CI 向け)。
-      # `npm install` と違い lock ファイルを書き換えないので、再現性が高い。
+      # --frozen-lockfile は pnpm-lock.yaml と package.json が食い違うとエラーにする (npm ci 相当)。
+      # lock ファイルを書き換えないので、再現性が高い。
       - name: 依存関係をインストール
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
+      # モノレポ全体のチェック。Turborepo が各パッケージのタスクを依存順に実行する
+      # (例: shared を先にビルドしてから api / web を検査する)。
+      - name: Lint
+        run: pnpm lint
+
+      - name: 型チェック
+        run: pnpm typecheck
 
       # shell: bash を明示すると `-eo pipefail` が有効になる。
-      # pipefail が無いと `npm test | tee ...` は tee の終了コード (0) で判定され、
+      # pipefail が無いと `pnpm test | tee ...` は tee の終了コード (0) で判定され、
       # テストが失敗しても job が成功してしまう。パイプを使うときは必ず指定する。
       - name: テストを実行してログを保存
         shell: bash
-        run: npm test 2>&1 | tee "test-output-node${{ matrix.node-version }}.log"
+        run: pnpm test 2>&1 | tee "test-output-node${{ matrix.node-version }}.log"
 
       # ログを artifact (成果物) として保存する。 Actions の実行ページからダウンロードできる。
       # if: always() で、テスト失敗時にもログを残す (失敗時こそログが必要)。
@@ -112,7 +126,27 @@ jobs:
           retention-days: 7 # 保存期間。ストレージ節約のため短めに
 
   # ---------------------------------------------------------------------------
-  # job 2: ゲート job (全体の成否を 1 つにまとめる)
+  # job 2: 本番ビルドの確認 (Node 1 バージョンのみ)
+  # ---------------------------------------------------------------------------
+  # Next.js のビルドは時間がかかるので matrix には含めず、1 回だけ実行する。
+  # Vercel にデプロイする前に、ビルドが通ることを GitHub 上で確認できる。
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 全パッケージをビルド
+        run: pnpm build
+
+  # ---------------------------------------------------------------------------
+  # job 3: ゲート job (全体の成否を 1 つにまとめる)
   # ---------------------------------------------------------------------------
   # なぜ必要か:
   #   ブランチ保護の「必須ステータスチェック」には job 名を登録する。
@@ -122,18 +156,20 @@ jobs:
     name: CI 結果まとめ
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: test
+    needs: [test, build]
     # always() が無いと、test が失敗したときにこの job 自体がスキップされ、
     # 「スキップ = 成功扱い」になってしまい、必須チェックをすり抜けるので注意。
     if: always()
     steps:
-      - name: test の結果を判定
+      - name: test / build の結果を判定
         env:
           TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
         run: |
-          echo "test job の結果: ${TEST_RESULT}"
-          if [ "${TEST_RESULT}" != "success" ]; then
-            echo "::error::テストが成功していません (${TEST_RESULT})"
+          echo "test job の結果 : ${TEST_RESULT}"
+          echo "build job の結果: ${BUILD_RESULT}"
+          if [ "${TEST_RESULT}" != "success" ] || [ "${BUILD_RESULT}" != "success" ]; then
+            echo "::error::CI が成功していません"
             exit 1 # 終了コードが 0 以外だと step / job が失敗になる
           fi
-          echo "すべてのテストに成功しました 🎉"
+          echo "すべてのチェックに成功しました 🎉"
