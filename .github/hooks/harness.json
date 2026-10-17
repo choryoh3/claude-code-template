@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node .github/hooks/scripts/session-context.cjs",
+        "timeout": 10
+      }
+    ],
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "node .github/hooks/scripts/guard.cjs",
+        "timeout": 10
+      }
+    ]
+  }
+}

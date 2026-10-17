@@ -11,7 +11,7 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test && node .github/scripts/pr-review.test.js",
+    "test": "turbo run test && node .github/scripts/pr-review.test.js && node .github/hooks/scripts/guard.test.cjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"
