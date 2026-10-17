@@ -1,7 +1,7 @@
 ---
 name: 'Architect'
 description: '設計の担当。データモデル・API 契約・画面構成・責務分割・トレードオフ比較・並列実装のためのタスク分割を行う。Use when: 設計方針を決めたい、複数案を比較したい、実装タスクを分割したい。'
-model: ['Claude Sonnet 4.5 (copilot)', 'Claude Sonnet 4 (copilot)']
+model: Claude Sonnet 5.5 (copilot)
 tools: [read, search, web]
 user-invocable: false
 ---

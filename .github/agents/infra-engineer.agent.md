@@ -1,7 +1,7 @@
 ---
 name: 'Infra Engineer'
 description: 'インフラ・運用の担当。Vercel / Neon / GitHub Actions / 環境変数 / マイグレーション / CORS の設定と手順を扱う。Use when: デプロイ、環境変数、CI、DB 運用、本番トラブルの調査。'
-model: ['Claude Sonnet 4.5 (copilot)', 'Claude Sonnet 4 (copilot)']
+model: Claude Sonnet 5.5 (copilot)
 tools: [read, search, edit, execute, web]
 user-invocable: false
 ---

@@ -1,7 +1,7 @@
 ---
 name: 'Code Reviewer'
 description: 'レビューの担当。正しさ・セキュリティ (OWASP Top 10)・設計規約・テスト不足・保守性の観点で差分をレビューする。読み取り専用。Use when: 実装後のレビュー、PR 前のチェック、学習用のコード講評。'
-model: ['Claude Sonnet 4.5 (copilot)', 'Claude Sonnet 4 (copilot)']
+model: Claude Sonnet 5.5 (copilot)
 tools: [read, search, execute]
 user-invocable: false
 ---

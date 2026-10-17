@@ -1,7 +1,7 @@
 ---
 name: 'Requirements Analyst'
 description: '要件定義の担当。曖昧な依頼をユーザーストーリー・受け入れ条件 (Given/When/Then)・スコープ外・未確定事項に整理する。Use when: 新機能の要件を固めたい、仕様の抜け漏れを洗い出したい。'
-model: ['Claude Sonnet 4.5 (copilot)', 'Claude Sonnet 4 (copilot)']
+model: Claude Sonnet 5.5 (copilot)
 tools: [read, search]
 user-invocable: false
 ---

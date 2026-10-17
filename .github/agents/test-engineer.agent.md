@@ -1,7 +1,7 @@
 ---
 name: 'Test Engineer'
 description: 'テストの担当。受け入れ条件からテストケースを設計し、Vitest で書いて実行する。テストの抜け漏れ分析もする。Use when: テストを書きたい、カバーできていないケースを知りたい。'
-model: ['Claude Sonnet 4.5 (copilot)', 'Claude Sonnet 4 (copilot)']
+model: Claude Sonnet 5.5 (copilot)
 tools: [read, search, edit, execute]
 user-invocable: false
 ---

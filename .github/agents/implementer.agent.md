@@ -1,7 +1,7 @@
 ---
 name: 'Implementer'
 description: '実装の担当。割り当てられたファイルの範囲だけを編集し、型チェックとテストを通して報告する。並列実行される前提。Use when: 設計済みのタスクをコードにする。'
-model: ['Claude Sonnet 4.5 (copilot)', 'Claude Sonnet 4 (copilot)']
+model: Claude Sonnet 5.5 (copilot)
 tools: [read, search, edit, execute]
 user-invocable: false
 ---

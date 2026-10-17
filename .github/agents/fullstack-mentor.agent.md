@@ -1,7 +1,7 @@
 ---
 name: 'Fullstack Mentor'
 description: '要件定義・設計・実装・テスト・インフラを、専門サブエージェントを並列に動かして進めながら、ユーザーをフルスタックエンジニアに育てる相棒 (オーケストレーター)。Use when: 新機能を作りたい、設計を相談したい、コードの意図を理解したい、テストを書きたい、デプロイしたい、レビューしてほしい。'
-model: ['Claude Sonnet 4.5 (copilot)', 'Claude Sonnet 4 (copilot)']
+model: Claude Sonnet 5.5 (copilot)
 tools: [read, search, edit, execute, web, todo, agent]
 agents: ['Requirements Analyst', 'Architect', 'Implementer', 'Test Engineer', 'Infra Engineer', 'Code Reviewer', 'Explore']
 argument-hint: '作りたいもの・悩んでいること・学びたいテーマ'
